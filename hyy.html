@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Merry Christmas - 黄雨嫣</title>
+    <style>
+        body { margin: 0; background: #010204; overflow: hidden; font-family: 'PingFang SC', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        
+        /* 启动引导层 */
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            cursor: pointer; transition: opacity 1s;
+        }
+        #overlay h2 { color: #ffd700; letter-spacing: 5px; margin-bottom: 20px; }
+        #overlay p { color: #fff; opacity: 0.6; animation: blink 2s infinite; }
+
+        .ui-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column; align-items: center;
+            opacity: 0; transition: opacity 2s;
+            justify-content: flex-end; /* 内容底部对齐 */
+            padding-bottom: 10vh;      /* 距离底部留出空间 */
+        }
+        .title { color: #ffd700; text-align: center; }
+        h1 { font-size: 3rem; margin: 10px 0; text-shadow: 0 0 20px rgba(255, 215, 0, 0.5); }
+        
+        @keyframes blink { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+    </style>
+</head>
+<body>
+
+<audio id="bgm" src="bgm.mp3" loop></audio>
+
+<div id="overlay">
+    <h2>Merry Christmas</h2>
+    <p>点击开启给 黄雨嫣 的圣诞礼物</p>
+</div>
+
+<div id="canvas-container"></div>
+
+<div class="ui-overlay" id="main-ui">
+    <div class="title">
+        <p style="letter-spacing: 3px; font-weight: 100;">Eternity for</p>
+        <h1>黄雨嫣</h1>
+    </div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+    console.log("Three.js 模块加载成功");
+
+    const PHOTO_PATHS = [
+        'photos/1.jpg', 'photos/2.jpg', 'photos/3.jpg', 'photos/4.jpg', 'photos/5.jpg'
+    ];
+
+    let scene, camera, renderer, composer, controls, particles = [];
+    let starLight; // 新增星星光源
+    let state = 'SCATTER'; // 初始为散开
+    let isAutoRotating = true; // 是否自动旋转
+    let clock = new THREE.Clock();
+    const audio = document.getElementById('bgm');
+
+    // 点击启动魔法
+    document.getElementById('overlay').addEventListener('click', function() {
+        this.style.opacity = '0';
+        document.getElementById('main-ui').style.opacity = '1';
+        
+        audio.play(); // 播放音乐
+        
+        // 延迟 800ms 再开始聚合
+        setTimeout(() => {
+            state = 'TREE'; 
+            this.remove();
+        }, 800);
+    });
+
+    // 点击屏幕切换状态 (树 <-> 散开)
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'overlay' || e.target.closest('#overlay')) return; // 忽略引导层的点击
+        
+        // 简单的防抖，避免拖动结束时误触
+        if (controls && controls.enableRotate) {
+             // 这里其实很难区分点击和拖动，通常用 mousedown/mouseup 的位移判断
+             // 但为了简单，我们假设用户点击是为了切换
+        }
+    });
+    
+    // 更好的点击检测：区分点击和拖动
+    let isDragging = false;
+    let mouseDownTime = 0;
+    
+    document.addEventListener('pointerdown', () => {
+        isDragging = false;
+        mouseDownTime = Date.now();
+    });
+    
+    document.addEventListener('pointermove', () => {
+        isDragging = true;
+    });
+    
+    document.addEventListener('pointerup', (e) => {
+        const clickDuration = Date.now() - mouseDownTime;
+        // 如果按下时间很短，且没有大幅度拖动（虽然 pointermove 触发了，但可能是微小抖动，这里简化处理）
+        // 或者直接用时间判断，点击通常小于 200ms
+        if (clickDuration < 200) {
+             if (e.target.id === 'overlay' || e.target.closest('#overlay')) return;
+             
+             // 切换状态
+             state = (state === 'TREE') ? 'SCATTER' : 'TREE';
+        }
+    });
+
+    init();
+    animate();
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x010204, 0.02);
+
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 90); // 相机后退，因为树变大了，视野要更广
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // 添加控制器
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 2.0;
+        controls.enablePan = false; // 禁止平移，保持中心
+        controls.maxDistance = 100;
+        controls.minDistance = 10;
+
+        // --- 光照系统升级 ---
+        // 1. 环境光：使用深蓝色模拟夜空漫反射，强度适中，不再是一片死黑
+        scene.add(new THREE.AmbientLight(0x222244, 3.0)); 
+
+        // 2. 主光源（暖光）：从右前方照射，模拟节日暖灯
+        const mainLight = new THREE.DirectionalLight(0xffaa33, 1.5);
+        mainLight.position.set(50, 50, 50);
+        scene.add(mainLight);
+
+        // 3. 轮廓光（冷光）：从左后方照射，勾勒物体边缘，增加立体感
+        const rimLight = new THREE.DirectionalLight(0x4455ff, 1.0);
+        rimLight.position.set(-50, 50, -50);
+        scene.add(rimLight);
+
+        // 4. 树心点光源：照亮树的内部
+        const centerLight = new THREE.PointLight(0xffd700, 30, 50);
+        centerLight.position.set(0, 10, 0);
+        scene.add(centerLight);
+
+        // 辉光
+        composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloom.threshold = 0.1; // 降低阈值，让粒子更容易发光
+        bloom.strength = 1.5;  // 提高强度，增强发光感
+        bloom.radius = 0.5;
+        composer.addPass(bloom);
+
+        const texLoader = new THREE.TextureLoader();
+        const textures = PHOTO_PATHS.map(path => texLoader.load(path, null, null, (err) => {
+            console.warn('图片加载失败，请确保使用本地服务器(Live Server)运行，不要直接双击打开 HTML:', path);
+        }));
+
+        const count = 1200; 
+        
+        // --- 1. 更好的五角星 ---
+        const starShape = new THREE.Shape();
+        const starPoints = 5;
+        const outerRadius = 2.5; // 增大星星尺寸
+        const innerRadius = 1.2;
+        for(let i=0; i<starPoints*2; i++) {
+            const r = (i%2 === 0) ? outerRadius : innerRadius;
+            const a = (i / (starPoints*2)) * Math.PI * 2 - Math.PI/2; 
+            const x = Math.cos(a) * r;
+            const y = Math.sin(a) * r;
+            if(i===0) starShape.moveTo(x, y);
+            else starShape.lineTo(x, y);
+        }
+        starShape.closePath();
+        
+        const starGeo = new THREE.ExtrudeGeometry(starShape, { 
+            depth: 0.5, 
+            bevelEnabled: true, 
+            bevelThickness: 0.2, 
+            bevelSize: 0.2, 
+            bevelSegments: 3 
+        });
+        starGeo.center(); 
+
+        const starMat = new THREE.MeshStandardMaterial({ 
+            color: 0xFFD700, 
+            emissive: 0xFFEE00, // 稍微偏黄一点的亮色
+            emissiveIntensity: 5.0, // 大幅提高自发光强度
+            metalness: 0.5, // 降低金属感，让自发光更透出来
+            roughness: 0.2
+        });
+        const starMesh = new THREE.Mesh(starGeo, starMat);
+        const starTreePos = new THREE.Vector3(0, 38, 0); 
+        const starScatterPos = new THREE.Vector3((Math.random()-0.5)*100, (Math.random()-0.5)*100, (Math.random()-0.5)*60);
+        starMesh.position.copy(starScatterPos);
+        scene.add(starMesh);
+        
+        // 创建跟随星星的光源
+        starLight = new THREE.PointLight(0xffd700, 50, 20); 
+        scene.add(starLight);
+        
+        particles.push({ mesh: starMesh, treePos: starTreePos, scatterPos: starScatterPos, isPhoto: false, offset: 0, isStar: true });
+
+        // --- 2. 礼物盒几何体 (增大尺寸) ---
+        const giftGeometries = [
+            new THREE.BoxGeometry(1.0, 1.0, 1.0), 
+            new THREE.BoxGeometry(1.2, 0.6, 0.9), 
+            new THREE.BoxGeometry(0.6, 1.2, 0.6)  
+        ];
+
+        // 普通装饰粒子 (增大尺寸)
+        const decoGeometries = [
+            new THREE.SphereGeometry(0.4, 12, 12),
+            new THREE.TorusGeometry(0.3, 0.12, 8, 16),
+            new THREE.OctahedronGeometry(0.5),
+            new THREE.ConeGeometry(0.4, 0.8, 16)
+        ];
+        
+        const photoGeo = new THREE.PlaneGeometry(6, 6); // 再次增大照片尺寸 
+
+        // 圣诞配色库
+        const colors = [0xFFD700, 0xBC131F, 0x2F5A3F, 0xE0F7FA, 0x7CFC00];
+        // 礼物颜色（更鲜艳）
+        const giftColors = [0xFF0000, 0x00FF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFA500];
+
+        for (let i = 0; i < count; i++) {
+            const ratio = i / count;
+            let mesh;
+            let isPhoto = false;
+            let isStar = false;
+
+            if (i % 30 === 0 && textures.length > 0) { 
+                // 照片
+                const mat = new THREE.MeshBasicMaterial({ 
+                    map: textures[Math.floor(Math.random() * textures.length)],
+                    side: THREE.DoubleSide,
+                    color: 0xdddddd 
+                });
+                mesh = new THREE.Mesh(photoGeo, mat);
+                isPhoto = true;
+            } else if (i % 15 === 0) { 
+                // 礼物盒 (每15个粒子出现一个礼物)
+                const geo = giftGeometries[Math.floor(Math.random() * giftGeometries.length)];
+                const color = giftColors[Math.floor(Math.random() * giftColors.length)];
+                const mat = new THREE.MeshStandardMaterial({
+                    color: color,
+                    metalness: 0.3, // 礼物盒通常是纸或塑料，金属感低一点
+                    roughness: 0.4,
+                    emissive: color,
+                    emissiveIntensity: 0.8 // 礼物盒发光弱一点，保留质感
+                });
+                mesh = new THREE.Mesh(geo, mat);
+            } else {
+                // 普通装饰
+                const geo = decoGeometries[Math.floor(Math.random() * decoGeometries.length)];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                const mat = new THREE.MeshStandardMaterial({ 
+                    color: color,
+                    metalness: 0.9, 
+                    roughness: 0.1,
+                    emissive: color, 
+                    emissiveIntensity: 1.5 
+                });
+                mesh = new THREE.Mesh(geo, mat);
+            }
+
+            // 树形分布优化：大幅拉伸间距，解决拥挤
+            const angle = ratio * Math.PI * 24; // 减少螺旋圈数，让垂直间距变大
+            const radius = (1 - ratio) * 30;    // 底部半径大幅增大 (18 -> 30)，让树更胖
+            const y = (ratio * 64) - 32;        // 高度大幅拉伸 (38 -> 64)，让树更高
+            
+            // 增加随机抖动，让树看起来更蓬松，不那么死板
+            const randomOffset = 2.5; // 大幅增加随机偏移 (0.6 -> 2.5)
+            const treePos = new THREE.Vector3(
+                Math.cos(angle) * radius + (Math.random()-0.5)*randomOffset, 
+                y + (Math.random()-0.5)*randomOffset, 
+                Math.sin(angle) * radius + (Math.random()-0.5)*randomOffset
+            );
+            
+            const scatterPos = new THREE.Vector3((Math.random()-0.5)*150, (Math.random()-0.5)*150, (Math.random()-0.5)*100); // 散开范围也变大
+
+            mesh.position.copy(scatterPos); 
+            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI); 
+            scene.add(mesh);
+            particles.push({ mesh, treePos, scatterPos, isPhoto, isStar, offset: Math.random() * 10 });
+        }
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const time = clock.getElapsedTime();
+
+        // 移除之前的自动运镜，改用 OrbitControls 的 autoRotate
+        controls.update();
+
+        particles.forEach(p => {
+            const target = (state === 'TREE') ? p.treePos : p.scatterPos;
+            p.mesh.position.lerp(target, 0.04);
+
+            // 旋转逻辑：星星自转，其他粒子随机转
+            if (p.isStar) {
+                p.mesh.rotation.y += 0.02;
+                p.mesh.rotation.z = Math.sin(time * 2) * 0.1; // 微微摆动
+                if (starLight) starLight.position.copy(p.mesh.position); // 光源跟随星星
+            } else {
+                p.mesh.rotation.y += 0.01;
+                p.mesh.rotation.x += 0.01;
+            }
+            
+            if (p.isPhoto) p.mesh.lookAt(camera.position);
+        });
+
+        composer.render();
+    }
+
+    window.onresize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+    };
+</script>
+</body>
+</html>

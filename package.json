@@ -1,0 +1,13 @@
+{
+  "name": "hyy-christmas",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "three": "^0.182.0"
+  }
+}
