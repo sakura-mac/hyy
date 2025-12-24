@@ -2,7 +2,9 @@
   "name": "hyy-christmas",
   "version": "1.0.0",
   "scripts": {
-    "dev": "vite"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "devDependencies": {
     "vite": "^5.0.0"
