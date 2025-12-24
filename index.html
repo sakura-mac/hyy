@@ -58,9 +58,14 @@
 
     console.log("Three.js 模块加载成功");
 
-    const PHOTO_PATHS = [
-        'photos/1.jpg', 'photos/2.jpg', 'photos/3.jpg', 'photos/4.jpg', 'photos/5.jpg'
-    ];
+    // --- 照片配置 ---
+    // 请将您的照片命名为 1.jpg, 2.jpg, ... 放入 public/photos 文件夹中
+    // 这里设置最大支持到 30 张照片，您可以根据实际数量修改这个数字
+    const MAX_PHOTOS = 30; 
+    const PHOTO_PATHS = [];
+    for (let i = 1; i <= MAX_PHOTOS; i++) {
+        PHOTO_PATHS.push(`photos/${i}.jpg`);
+    }
 
     let scene, camera, renderer, composer, controls, particles = [];
     let starLight; // 新增星星光源
@@ -251,15 +256,31 @@
             let isPhoto = false;
             let isStar = false;
 
-            if (i % 30 === 0 && textures.length > 0) { 
+            // 增加照片出现的频率 (每 25 个粒子出现一张照片，之前是 30)
+            if (i % 25 === 0 && textures.length > 0) { 
                 // 照片
-                const mat = new THREE.MeshBasicMaterial({ 
-                    map: textures[Math.floor(Math.random() * textures.length)],
-                    side: THREE.DoubleSide,
-                    color: 0xdddddd 
-                });
-                mesh = new THREE.Mesh(photoGeo, mat);
-                isPhoto = true;
+                // 随机取一张照片，但为了避免相邻重复，可以加个简单的随机逻辑
+                const texIndex = Math.floor(Math.random() * textures.length);
+                const texture = textures[texIndex];
+                
+                // 只有当图片加载成功时才显示为照片，否则降级为普通装饰球
+                if (texture && texture.image) {
+                    const mat = new THREE.MeshBasicMaterial({ 
+                        map: texture,
+                        side: THREE.DoubleSide,
+                        color: 0xeeeeee // 稍微提亮一点
+                    });
+                    mesh = new THREE.Mesh(photoGeo, mat);
+                    isPhoto = true;
+                } else {
+                    // 如果图片没加载出来（比如只有5张图但代码里写了30张），就变成漂亮的装饰球
+                    const geo = decoGeometries[Math.floor(Math.random() * decoGeometries.length)];
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    const mat = new THREE.MeshStandardMaterial({ 
+                        color: color, metalness: 0.9, roughness: 0.1, emissive: color, emissiveIntensity: 1.5 
+                    });
+                    mesh = new THREE.Mesh(geo, mat);
+                }
             } else if (i % 15 === 0) { 
                 // 礼物盒 (每15个粒子出现一个礼物)
                 const geo = giftGeometries[Math.floor(Math.random() * giftGeometries.length)];
